@@ -1,55 +1,23 @@
-/**
- * PROJECT: Nested Focus
- * * FILE REQUIREMENTS (HomeScreen.js):
- * 1.  [DONE] Create a basic Todo List App structure.
- * 2.  [DONE] Display nested JSON tasks (Unlimited Nesting).
- * 3.  [DONE] Inline input for main list and sub-lists.
- * 4.  [DONE] Persistence using AsyncStorage.
- * 5.  [DONE] Expand/Collapse logic with auto-expand on add.
- * 6.  [DONE] Force all items to COLLAPSED state on App Load.
- * 7.  [DONE] FIX: Aggressive keyboard handling to prevent double-taps.
- * 8.  [DONE] Single Selection Focus: Tap to select a task and highlight it.
- * 9.  [DONE] Contextual Bottom Menu: Move 'Delete' here and add 'Focus'.
- * 10. [DONE] UX: Automatically dismiss keyboard when an item is selected.
- * 11. [DONE] Focus Mode: Ability to set a selected item as the visual root.
- * 12. [DONE] Focus Navigation: 'Back' button to retreat one level up the hierarchy.
- * 13. [DONE] UI: Persistent Bottom Menu with disabled states.
- * 14. [DONE] UI: Breadcrumb path (non-clickable) on top-right when focused.
- * 15. [DONE] UX: Auto-cleanup empty sub-task inputs on focus change/blur.
- * 16. [DONE] UI: Remove global "Add to..." footer when in Focus Mode.
- * 17. [DONE] UI: Remove vertical nesting lines.
- * 18. [DONE] UI: Hide '+' on Focused Root; use indented permanent bottom input instead.
- * 19. [DONE] UI: Change root header title to "Nested Focus".
- * 20. [DONE] UI: Unclickable note icon in main list if task has content/notes.
- * 21. [DONE] UI: Remove '○' bullet icon for singular items (no sub-tasks).
- * 22. [DONE] Multi-Tab UI: 3 tabs at the top (Todo, Shared, Template).
- * 23. [DONE] State Isolation: Switching tabs saves current and loads the new JSON.
- * 24. [DONE] Clipboard: Copy/Paste tasks across different JSON tabs.
- * 25. [DONE] Shared Linking: Tasks copied from Shared become links with a reference counter.
- * 26. [DONE] Live Linking: Linked items render sub-tasks from the original source.
- * 27. [DONE] Link Expansion: Linked items show arrows if source has sub-tasks.
- * 28. [DONE] Global Data Sync: Load all 3 JSONs into memory so links work across tabs.
- * 29. [DONE] Broken Link Warning: Show ⚠️ if the original source task is deleted.
- * 30. [DONE] FIX: Delete logic updated for Global State compatibility.
- * 31. [DONE] FIX: Paste logic now prioritizes selectedItem over focusRoot.
- */
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  FlatList, 
-  KeyboardAvoidingView, 
-  Platform, 
-  Pressable, 
-  Keyboard, 
-  useColorScheme, 
-  StatusBar, 
-  TouchableOpacity 
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Keyboard,
+  useColorScheme,
+  StatusBar,
+  TouchableOpacity,
+  Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import HamburgerMenu from '../components/HamburgerMenu';
+
+const SETTINGS_KEY = '@settings_v1';
 
 const TABS = {
   TODO: { id: 'todo', label: 'Todo', key: '@todo_v1' },
@@ -84,9 +52,10 @@ export default function HomeScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState(TABS.TODO);
   const [globalData, setGlobalData] = useState({ todo: [], shared: [], template: [] });
   const [mainInput, setMainInput] = useState('');
-  const [selectedItem, setSelectedItem] = useState(null); 
+  const [selectedItem, setSelectedItem] = useState(null);
   const [focusStack, setFocusStack] = useState([]);
   const [clipboard, setClipboard] = useState(null);
+  const [settings, setSettings] = useState({ showCompleted: true });
 
   // The current list being displayed based on the active tab
   const taskList = globalData[activeTab.id];
@@ -94,9 +63,31 @@ export default function HomeScreen({ navigation }) {
   // ----------------------------------------------------------------
   // PERSISTENCE ENGINE
   // ----------------------------------------------------------------
-  useEffect(() => { 
-    loadAllTabsFromDisk(); 
+  useEffect(() => {
+    loadAllTabsFromDisk();
+    loadSettings();
   }, []);
+
+  // Re-read settings when screen regains focus (e.g. returning from DetailScreen)
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', loadSettings);
+    return unsub;
+  }, [navigation]);
+
+  const loadSettings = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+      if (raw) setSettings(JSON.parse(raw));
+    } catch (e) { console.error('Settings load error', e); }
+  };
+
+  const saveSettings = async (newSettings) => {
+    setSettings(newSettings);
+    try { await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings)); }
+    catch (e) { console.error('Settings save error', e); }
+  };
+
+  const handleSettingChange = (key, value) => saveSettings({ ...settings, [key]: value });
 
   const loadAllTabsFromDisk = async () => {
     try {
@@ -104,12 +95,18 @@ export default function HomeScreen({ navigation }) {
       const sharedVal = await AsyncStorage.getItem(TABS.SHARED.key);
       const templVal = await AsyncStorage.getItem(TABS.TEMPLATE.key);
 
-      const collapseRecursive = (list) => (list || []).map(item => ({
-        ...item, 
-        isExpanded: false, 
-        showInput: false, 
-        subTasks: collapseRecursive(item.subTasks || [])
-      }));
+      const now = Date.now();
+      const collapseRecursive = (list) => (list || []).map(item => {
+        const shouldReappear = item.completed && item.reappearAfter > 0 && item.completedAt && (item.completedAt + item.reappearAfter) <= now;
+        return {
+          ...item,
+          isExpanded: false,
+          showInput: false,
+          completed: shouldReappear ? false : item.completed,
+          completedAt: shouldReappear ? null : item.completedAt,
+          subTasks: collapseRecursive(item.subTasks || [])
+        };
+      });
 
       setGlobalData({
         todo: collapseRecursive(JSON.parse(todoVal || '[]')),
@@ -252,6 +249,18 @@ export default function HomeScreen({ navigation }) {
   // ----------------------------------------------------------------
 const handleDeleteTask = () => {
     if (!selectedItem) return;
+    Alert.alert(
+      'Delete Task',
+      `Delete "${selectedItem.item.text}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => confirmDelete() },
+      ]
+    );
+  };
+
+  const confirmDelete = () => {
+    if (!selectedItem) return;
     const idToDelete = selectedItem.item.id;
 
     // Helper: Deeply filters a list to remove a specific ID
@@ -294,12 +303,33 @@ const handleDeleteTask = () => {
     updateGlobalData(activeTab.id, clean([...taskList]));
   };
 
+  const handleAddTask = (text, parentTask) => {
+    if (!text.trim()) return;
+    const newTask = { id: Date.now() + Math.random(), text: text.trim(), isExpanded: false, subTasks: [], showInput: false, note: '' };
+    const newList = [...taskList];
+    if (parentTask) {
+      const target = findTaskInActiveList(newList, parentTask.id);
+      if (target) { target.subTasks.push(newTask); target.isExpanded = true; }
+    } else {
+      newList.push(newTask);
+    }
+    updateGlobalData(activeTab.id, newList);
+    setMainInput('');
+  };
+
   // ----------------------------------------------------------------
   // FOCUS & NAVIGATION
   // ----------------------------------------------------------------
   const currentFocusId = focusStack[focusStack.length - 1];
   const focusedTask = currentFocusId ? findTaskInActiveList(taskList, currentFocusId) : null;
-  const displayData = focusedTask ? [focusedTask] : taskList;
+
+  const filterBySettings = (list) => {
+    if (settings.showCompleted) return list;
+    return list
+      .filter(item => !item.completed)
+      .map(item => ({ ...item, subTasks: filterBySettings(item.subTasks || []) }));
+  };
+  const displayData = filterBySettings(focusedTask ? [focusedTask] : taskList);
 
   // ----------------------------------------------------------------
   // RENDERING ENGINE
@@ -345,7 +375,7 @@ const handleDeleteTask = () => {
             </View>
           </Pressable>
           
-          <Text style={[styles.itemText, isBrokenLink && { color: theme.danger, fontStyle: 'italic' }]}>
+          <Text style={[styles.itemText, isBrokenLink && { color: theme.danger, fontStyle: 'italic' }, item.completed && { textDecorationLine: 'line-through', opacity: 0.45 }]}>
             {item.text} {isBrokenLink && "(Broken Source)"}
             {item.refCount > 0 && <Text style={styles.refCounterText}> (Ref: {item.refCount})</Text>}
           </Text>
@@ -405,19 +435,22 @@ const handleDeleteTask = () => {
     <View style={styles.screenContainer}>
       <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       
-      {/* HEADER TABS */}
-      <View style={styles.tabContainer}>
-        {Object.values(TABS).map((tab) => (
-          <TouchableOpacity 
-            key={tab.id} 
-            onPress={() => { setActiveTab(tab); setSelectedItem(null); setFocusStack([]); }} 
-            style={[styles.tabButton, activeTab.id === tab.id && styles.activeTabButton]}
-          >
-            <Text style={[styles.tabButtonText, activeTab.id === tab.id && styles.activeTabButtonText]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* HEADER TABS + HAMBURGER */}
+      <View style={styles.topBar}>
+        <View style={[styles.tabContainer, { flex: 1 }]}>
+          {Object.values(TABS).map((tab) => (
+            <TouchableOpacity
+              key={tab.id}
+              onPress={() => { setActiveTab(tab); setSelectedItem(null); setFocusStack([]); }}
+              style={[styles.tabButton, activeTab.id === tab.id && styles.activeTabButton]}
+            >
+              <Text style={[styles.tabButtonText, activeTab.id === tab.id && styles.activeTabButtonText]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <HamburgerMenu isDarkMode={isDarkMode} settings={settings} onSettingChange={handleSettingChange} />
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -492,12 +525,18 @@ const handleDeleteTask = () => {
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: selectedItem ? theme.primary : theme.disabled }]} 
             onPress={() => navigation.navigate('Details', { 
-              task: selectedItem.item, 
-              onSave: (id, note) => {
+              task: selectedItem.item,
+              onSave: (id, { note, completed, reappearAfter, completedAt }) => {
                 const newList = [...taskList];
                 const target = findTaskInActiveList(newList, id);
-                if (target) { target.note = note; updateGlobalData(activeTab.id, newList); }
-              } 
+                if (target) {
+                  target.note = note;
+                  target.completed = completed;
+                  target.reappearAfter = reappearAfter;
+                  target.completedAt = completedAt;
+                  updateGlobalData(activeTab.id, newList);
+                }
+              }
             })} 
             disabled={!selectedItem}
           >
@@ -519,7 +558,8 @@ const handleDeleteTask = () => {
 
 const createStyles = (theme, isDarkMode) => StyleSheet.create({
   screenContainer: { flex: 1, backgroundColor: theme.background },
-  tabContainer: { flexDirection: 'row', marginTop: 60, marginHorizontal: 20, backgroundColor: theme.card, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: theme.border },
+  topBar: { flexDirection: 'row', alignItems: 'center', marginTop: 60, marginHorizontal: 20, gap: 10 },
+  tabContainer: { flexDirection: 'row', backgroundColor: theme.card, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: theme.border },
   tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
   activeTabButton: { backgroundColor: theme.primary },
   tabButtonText: { fontSize: 13, fontWeight: '600', color: theme.subText },
