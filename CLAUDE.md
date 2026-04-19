@@ -81,7 +81,7 @@ Tasks are plain JS objects stored as nested JSON. Each task:
 
 ```js
 {
-  id: number,         // Date.now() + Math.random()
+  id: string,         // 11-char base64url (YouTube-style)
   text: string,
   subTasks: Task[],   // unlimited nesting
   isExpanded: bool,   // UI state (always reset to false on load)

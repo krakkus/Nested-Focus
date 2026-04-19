@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SettingsDrawer from '../components/SettingsDrawer';
-import { loadAllTabs, saveTab, loadSettings, saveSettings } from '../storage';
+import { loadAllTabs, saveTab, loadSettings, saveSettings, loadUserId, saveUserId, generateUserId, collapseData, loadLastModified, saveLastModified } from '../storage';
 import s from './HomePage.module.css';
 
 const TABS = [
@@ -17,13 +17,33 @@ export default function HomePage({ onOpenDetail }) {
   const [focusStack, setFocusStack]   = useState([]);
   const [clipboard, setClipboard]     = useState(null);
   const [settings, setSettings]       = useState({ showCompleted: true });
+  const [userId, setUserId]           = useState('');
 
   // ----------------------------------------------------------------
   // PERSISTENCE
   // ----------------------------------------------------------------
+  const fetchRemote = useCallback((id) => {
+    fetch(`https://todo.krakkus.com/userdata/load.php?id=${id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(remote => {
+        if (remote?.lastModified > loadLastModified()) {
+          const processed = collapseData(remote);
+          setGlobalData(processed);
+          saveTab('todo', processed.todo);
+          saveTab('shared', processed.shared);
+          saveTab('template', processed.template);
+          saveLastModified(remote.lastModified);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     setGlobalData(loadAllTabs());
     setSettings(loadSettings());
+    const id = loadUserId();
+    setUserId(id);
+    fetchRemote(id);
   }, []);
 
   const updateGlobalData = useCallback((tabId, newList) => {
@@ -36,6 +56,54 @@ export default function HomePage({ onOpenDetail }) {
     setSettings(next);
     saveSettings(next);
   };
+
+  const handleUserIdChange = (id) => {
+    setUserId(id);
+    saveUserId(id);
+    saveLastModified(0);
+    fetchRemote(id);
+  };
+
+  // ----------------------------------------------------------------
+  // REMOTE SYNC ON EXIT
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    const stripUiState = (list) => list.map(({ isExpanded, showInput, ...task }) => ({
+      ...task,
+      subTasks: stripUiState(task.subTasks || []),
+    }));
+
+    const syncToServer = (data) => {
+      const id = loadUserId();
+      if (!id) return;
+      const ts = Date.now();
+      const clean = {
+        lastModified: ts,
+        todo: stripUiState(data.todo),
+        shared: stripUiState(data.shared),
+        template: stripUiState(data.template),
+      };
+      saveLastModified(ts);
+      fetch(`https://todo.krakkus.com/userdata/save.php?id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(clean),
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const handleUnload = () => syncToServer(globalData);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') syncToServer(globalData);
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [globalData]);
 
   // ----------------------------------------------------------------
   // HELPERS
@@ -77,7 +145,7 @@ export default function HomePage({ onOpenDetail }) {
   const handleAddTask = (text, parentTask) => {
     if (!text.trim()) return;
     const newTask = {
-      id: Date.now() + Math.random(),
+      id: generateUserId(),
       text: text.trim(),
       isExpanded: false,
       subTasks: [],
@@ -140,7 +208,7 @@ export default function HomePage({ onOpenDetail }) {
 
     if (isFromShared && !isPastingShared) {
       newTask = {
-        id: Date.now(),
+        id: generateUserId(),
         text: `🔗 ${clipboard.data.text}`,
         isLink: true,
         originalId: clipboard.data.id,
@@ -149,7 +217,7 @@ export default function HomePage({ onOpenDetail }) {
       };
       updateGlobalData('shared', incrementRefCounter(globalData.shared, clipboard.data.id));
     } else {
-      newTask = { ...JSON.parse(JSON.stringify(clipboard.data)), id: Date.now() + Math.random(), refCount: 0 };
+      newTask = { ...JSON.parse(JSON.stringify(clipboard.data)), id: generateUserId(), refCount: 0 };
     }
 
     const newGlobalData = JSON.parse(JSON.stringify(globalData));
@@ -220,7 +288,7 @@ export default function HomePage({ onOpenDetail }) {
         const txt = e.target.value.trim();
         if (txt) {
           item.subTasks.push({
-            id: Date.now() + Math.random(),
+            id: generateUserId(),
             text: txt,
             isExpanded: false,
             subTasks: [],
@@ -314,7 +382,7 @@ export default function HomePage({ onOpenDetail }) {
             </button>
           ))}
         </div>
-        <SettingsDrawer settings={settings} onSettingChange={handleSettingChange} />
+        <SettingsDrawer settings={settings} onSettingChange={handleSettingChange} userId={userId} onUserIdChange={handleUserIdChange} />
       </div>
 
       {/* BREADCRUMB + TITLE */}

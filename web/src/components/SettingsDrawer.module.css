@@ -70,3 +70,64 @@
 }
 .toggle input:checked + .slider { background: var(--primary); }
 .toggle input:checked + .slider::before { transform: translateX(20px); }
+
+/* User ID section */
+.idSection {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.idRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.idDisplay {
+  flex: 1;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--border);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  word-break: break-all;
+  position: relative;
+}
+
+.copiedBadge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--primary);
+}
+
+.idInput {
+  flex: 1;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  outline: none;
+}
+
+.idButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.idBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.idBtn:hover { background: var(--border); }

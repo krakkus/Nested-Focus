@@ -5,7 +5,29 @@ const KEYS = {
   shared: '@shared_v1',
   template: '@template_v1',
   settings: '@settings_v1',
+  userId: '@user_id_v1',
+  lastModified: '@last_modified_v1',
 };
+
+const USER_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+
+export function generateUserId() {
+  const buf = new Uint8Array(11);
+  crypto.getRandomValues(buf);
+  return Array.from(buf).map(b => USER_ID_CHARS[b % 64]).join('');
+}
+
+export function loadUserId() {
+  const stored = localStorage.getItem(KEYS.userId);
+  if (stored) return stored;
+  const id = generateUserId();
+  localStorage.setItem(KEYS.userId, id);
+  return id;
+}
+
+export function saveUserId(id) {
+  localStorage.setItem(KEYS.userId, id);
+}
 
 export function loadItem(key) {
   try {
@@ -24,9 +46,8 @@ export function saveItem(key, value) {
   }
 }
 
-export function loadAllTabs() {
+export function collapseData(raw) {
   const now = Date.now();
-
   const collapseRecursive = (list) =>
     (list || []).map((item) => {
       const shouldReappear =
@@ -43,12 +64,27 @@ export function loadAllTabs() {
         subTasks: collapseRecursive(item.subTasks || []),
       };
     });
-
   return {
-    todo: collapseRecursive(loadItem(KEYS.todo) || []),
-    shared: collapseRecursive(loadItem(KEYS.shared) || []),
-    template: collapseRecursive(loadItem(KEYS.template) || []),
+    todo: collapseRecursive(raw.todo || []),
+    shared: collapseRecursive(raw.shared || []),
+    template: collapseRecursive(raw.template || []),
   };
+}
+
+export function loadAllTabs() {
+  return collapseData({
+    todo: loadItem(KEYS.todo),
+    shared: loadItem(KEYS.shared),
+    template: loadItem(KEYS.template),
+  });
+}
+
+export function loadLastModified() {
+  return loadItem(KEYS.lastModified) || 0;
+}
+
+export function saveLastModified(ts) {
+  saveItem(KEYS.lastModified, ts);
 }
 
 export function saveTab(tabId, data) {

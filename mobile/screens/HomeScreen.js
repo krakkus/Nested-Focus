@@ -12,12 +12,24 @@ import {
   useColorScheme,
   StatusBar,
   TouchableOpacity,
-  Alert
+  Alert,
+  AppState
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import HamburgerMenu from '../components/HamburgerMenu';
 
 const SETTINGS_KEY = '@settings_v1';
+const USER_ID_KEY = '@user_id_v1';
+const LAST_MODIFIED_KEY = '@last_modified_v1';
+
+const USER_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+const generateUserId = () => {
+  let id = '';
+  for (let i = 0; i < 11; i++) {
+    id += USER_ID_CHARS[Math.floor(Math.random() * 64)];
+  }
+  return id;
+};
 
 const TABS = {
   TODO: { id: 'todo', label: 'Todo', key: '@todo_v1' },
@@ -56,6 +68,7 @@ export default function HomeScreen({ navigation }) {
   const [focusStack, setFocusStack] = useState([]);
   const [clipboard, setClipboard] = useState(null);
   const [settings, setSettings] = useState({ showCompleted: true });
+  const [userId, setUserId] = useState('');
 
   // The current list being displayed based on the active tab
   const taskList = globalData[activeTab.id];
@@ -66,6 +79,10 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     loadAllTabsFromDisk();
     loadSettings();
+    loadUserIdFromDisk().then(id => {
+      if (!id) return;
+      loadFromServer(id);
+    });
   }, []);
 
   // Re-read settings when screen regains focus (e.g. returning from DetailScreen)
@@ -88,6 +105,87 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleSettingChange = (key, value) => saveSettings({ ...settings, [key]: value });
+
+  const loadUserIdFromDisk = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(USER_ID_KEY);
+      if (raw) {
+        setUserId(raw);
+        return raw;
+      } else {
+        const id = generateUserId();
+        setUserId(id);
+        await AsyncStorage.setItem(USER_ID_KEY, id);
+        return id;
+      }
+    } catch (e) { console.error('UserId load error', e); return null; }
+  };
+
+  const loadFromServer = async (id) => {
+    try {
+      const res = await fetch(`https://todo.krakkus.com/userdata/load.php?id=${id}`);
+      if (!res.ok) return;
+      const remote = await res.json();
+      const localTsRaw = await AsyncStorage.getItem(LAST_MODIFIED_KEY);
+      const localTs = localTsRaw ? JSON.parse(localTsRaw) : 0;
+      if (remote?.lastModified > localTs) {
+        const now = Date.now();
+        const collapseRecursive = (list) => (list || []).map(item => {
+          const shouldReappear = item.completed && item.reappearAfter > 0 && item.completedAt && (item.completedAt + item.reappearAfter) <= now;
+          return { ...item, isExpanded: false, showInput: false, completed: shouldReappear ? false : item.completed, completedAt: shouldReappear ? null : item.completedAt, subTasks: collapseRecursive(item.subTasks || []) };
+        });
+        const processed = {
+          todo: collapseRecursive(remote.todo || []),
+          shared: collapseRecursive(remote.shared || []),
+          template: collapseRecursive(remote.template || []),
+        };
+        setGlobalData(processed);
+        await AsyncStorage.multiSet([
+          [TABS.TODO.key, JSON.stringify(processed.todo)],
+          [TABS.SHARED.key, JSON.stringify(processed.shared)],
+          [TABS.TEMPLATE.key, JSON.stringify(processed.template)],
+          [LAST_MODIFIED_KEY, JSON.stringify(remote.lastModified)],
+        ]);
+      }
+    } catch (e) { console.error('Remote load error', e); }
+  };
+
+  const handleUserIdChange = async (id) => {
+    setUserId(id);
+    try {
+      await AsyncStorage.setItem(USER_ID_KEY, id);
+      await AsyncStorage.setItem(LAST_MODIFIED_KEY, JSON.stringify(0));
+      loadFromServer(id);
+    } catch (e) { console.error('UserId save error', e); }
+  };
+
+  // ----------------------------------------------------------------
+  // REMOTE SYNC ON EXIT
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    const syncToServer = async (id, data) => {
+      try {
+        const ts = Date.now();
+        const payload = { lastModified: ts, ...data };
+        await AsyncStorage.setItem(LAST_MODIFIED_KEY, JSON.stringify(ts));
+        await fetch(`https://todo.krakkus.com/userdata/save.php?id=${id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        console.error('Remote sync error', e);
+      }
+    };
+
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        if (userId) syncToServer(userId, globalData);
+      }
+    });
+
+    return () => sub.remove();
+  }, [userId, globalData]);
 
   const loadAllTabsFromDisk = async () => {
     try {
@@ -186,7 +284,7 @@ export default function HomeScreen({ navigation }) {
 
     if (isFromSharedTab && !isPastingToSharedTab) {
       newTask = {
-        id: Date.now(),
+        id: generateUserId(),
         text: `🔗 ${clipboard.data.text}`,
         isLink: true,
         originalId: clipboard.data.id,
@@ -199,7 +297,7 @@ export default function HomeScreen({ navigation }) {
     } else {
       newTask = {
         ...JSON.parse(JSON.stringify(clipboard.data)),
-        id: Date.now() + Math.random(),
+        id: generateUserId(),
         refCount: 0
       };
     }
@@ -305,7 +403,7 @@ const handleDeleteTask = () => {
 
   const handleAddTask = (text, parentTask) => {
     if (!text.trim()) return;
-    const newTask = { id: Date.now() + Math.random(), text: text.trim(), isExpanded: false, subTasks: [], showInput: false, note: '' };
+    const newTask = { id: generateUserId(), text: text.trim(), isExpanded: false, subTasks: [], showInput: false, note: '' };
     const newList = [...taskList];
     if (parentTask) {
       const target = findTaskInActiveList(newList, parentTask.id);
@@ -411,7 +509,7 @@ const handleDeleteTask = () => {
                     const txt = e.nativeEvent.text;
                     if (txt.trim()) {
                       item.subTasks.push({ 
-                        id: Date.now() + Math.random(), 
+                        id: generateUserId(), 
                         text: txt.trim(), 
                         isExpanded: false, 
                         subTasks: [], 
@@ -450,7 +548,7 @@ const handleDeleteTask = () => {
             </TouchableOpacity>
           ))}
         </View>
-        <HamburgerMenu isDarkMode={isDarkMode} settings={settings} onSettingChange={handleSettingChange} />
+        <HamburgerMenu isDarkMode={isDarkMode} settings={settings} onSettingChange={handleSettingChange} userId={userId} onUserIdChange={handleUserIdChange} generateUserId={generateUserId} />
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>

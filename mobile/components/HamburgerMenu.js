@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, Pressable, StyleSheet, Switch, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Modal, Pressable, StyleSheet, Switch, Platform, Clipboard } from 'react-native';
 
-export default function HamburgerMenu({ isDarkMode, settings, onSettingChange }) {
+export default function HamburgerMenu({ isDarkMode, settings, onSettingChange, userId, onUserIdChange, generateUserId }) {
   const [visible, setVisible] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const colors = {
     bg: isDarkMode ? '#1F2937' : '#FFFFFF',
@@ -12,6 +15,29 @@ export default function HamburgerMenu({ isDarkMode, settings, onSettingChange })
     border: isDarkMode ? '#374151' : '#E5E7EB',
     primary: '#3B82F6',
     icon: isDarkMode ? '#F9FAFB' : '#111827',
+    inputBg: isDarkMode ? '#111827' : '#F3F4F6',
+  };
+
+  const startEdit = () => {
+    setDraft(userId);
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    const trimmed = draft.trim();
+    if (trimmed) onUserIdChange(trimmed);
+    setEditing(false);
+  };
+
+  const handleRandomize = () => {
+    onUserIdChange(generateUserId());
+    setEditing(false);
+  };
+
+  const handleCopy = () => {
+    Clipboard.setString(userId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
@@ -22,7 +48,6 @@ export default function HamburgerMenu({ isDarkMode, settings, onSettingChange })
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <Pressable style={[styles.overlay, { backgroundColor: colors.overlay }]} onPress={() => setVisible(false)}>
-          {/* Prevent taps inside the drawer from closing it */}
           <Pressable style={[styles.drawer, { backgroundColor: colors.bg }]} onPress={e => e.stopPropagation()}>
 
             <Text style={[styles.drawerTitle, { color: colors.text, borderBottomColor: colors.border }]}>Settings</Text>
@@ -38,6 +63,45 @@ export default function HamburgerMenu({ isDarkMode, settings, onSettingChange })
                 trackColor={{ false: '#374151', true: colors.primary }}
                 thumbColor="#FFF"
               />
+            </View>
+
+            <View style={[styles.idSection, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>User ID</Text>
+              <Text style={[styles.rowSub, { color: colors.subText }]}>Unique identifier for this client</Text>
+              <View style={styles.idRow}>
+                {editing ? (
+                  <TextInput
+                    style={[styles.idInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.primary }]}
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={commitEdit}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    spellCheck={false}
+                    autoFocus
+                  />
+                ) : (
+                  <TouchableOpacity onPress={handleCopy} style={[styles.idDisplay, { backgroundColor: colors.inputBg }]}>
+                    <Text style={[styles.idText, { color: colors.text }]}>
+                      {userId}{copied ? '  ✓' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <View style={styles.idButtons}>
+                  {editing ? (
+                    <TouchableOpacity onPress={commitEdit} style={[styles.idBtn, { borderColor: colors.border }]}>
+                      <Text style={{ color: colors.text, fontSize: 16 }}>✓</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={startEdit} style={[styles.idBtn, { borderColor: colors.border }]}>
+                      <Text style={{ color: colors.text, fontSize: 16 }}>✎</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={handleRandomize} style={[styles.idBtn, { borderColor: colors.border }]}>
+                    <Text style={{ color: colors.text, fontSize: 16 }}>⟳</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
 
           </Pressable>
@@ -78,4 +142,44 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, marginRight: 12 },
   rowLabel: { fontSize: 15, fontWeight: '600' },
   rowSub: { fontSize: 12, marginTop: 2 },
+  idSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  idRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  idDisplay: {
+    flex: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  idText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 13,
+  },
+  idInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 13,
+  },
+  idButtons: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  idBtn: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
 });
