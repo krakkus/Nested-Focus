@@ -23,7 +23,7 @@ if (!preg_match('/^[A-Za-z0-9_\-]{11}$/', $id)) {
     exit;
 }
 
-$path = __DIR__ . '/' . $id . '.json';
+$path = __DIR__ . '/userdata/' . $id . '.json';
 
 if (!file_exists($path)) {
     http_response_code(404);

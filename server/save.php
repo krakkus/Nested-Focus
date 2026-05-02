@@ -38,7 +38,7 @@ if (json_decode($body) === null) {
     exit;
 }
 
-$dir = __DIR__;
+$dir = __DIR__ . '/userdata';
 $path = $dir . '/' . $id . '.json';
 
 if (file_put_contents($path, $body, LOCK_EX) === false) {

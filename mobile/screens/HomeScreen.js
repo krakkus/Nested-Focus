@@ -123,7 +123,7 @@ export default function HomeScreen({ navigation }) {
 
   const loadFromServer = async (id) => {
     try {
-      const res = await fetch(`https://alsokrakkus.com/todo/userdata/load.php?id=${id}`);
+      const res = await fetch(`https://alsokrakkus.com/todo/load.php?id=${id}`);
       if (!res.ok) return;
       const remote = await res.json();
       const localTsRaw = await AsyncStorage.getItem(LAST_MODIFIED_KEY);
@@ -168,7 +168,7 @@ export default function HomeScreen({ navigation }) {
         const ts = Date.now();
         const payload = { lastModified: ts, ...data };
         await AsyncStorage.setItem(LAST_MODIFIED_KEY, JSON.stringify(ts));
-        await fetch(`https://alsokrakkus.com/todo/userdata/save.php?id=${id}`, {
+        await fetch(`https://alsokrakkus.com/todo/save.php?id=${id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
