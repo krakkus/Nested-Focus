@@ -23,7 +23,7 @@ export default function HomePage({ onOpenDetail }) {
   // PERSISTENCE
   // ----------------------------------------------------------------
   const fetchRemote = useCallback((id) => {
-    fetch(`https://todo.krakkus.com/userdata/load.php?id=${id}`)
+    fetch(`/todo/userdata/load.php?id=${id}`)
       .then(r => r.ok ? r.json() : null)
       .then(remote => {
         if (remote?.lastModified > loadLastModified()) {
@@ -84,7 +84,7 @@ export default function HomePage({ onOpenDetail }) {
         template: stripUiState(data.template),
       };
       saveLastModified(ts);
-      fetch(`https://todo.krakkus.com/userdata/save.php?id=${id}`, {
+      fetch(`/todo/userdata/save.php?id=${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(clean),
