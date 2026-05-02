@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   StyleSheet,
   Text,
@@ -69,6 +69,7 @@ export default function HomeScreen({ navigation }) {
   const [clipboard, setClipboard] = useState(null);
   const [settings, setSettings] = useState({ showCompleted: true });
   const [userId, setUserId] = useState('');
+  const loadedRef = useRef(false);
 
   // The current list being displayed based on the active tab
   const taskList = globalData[activeTab.id];
@@ -124,7 +125,7 @@ export default function HomeScreen({ navigation }) {
   const loadFromServer = async (id) => {
     try {
       const res = await fetch(`https://alsokrakkus.com/todo/load.php?id=${id}`);
-      if (!res.ok) return;
+      if (!res.ok) { loadedRef.current = true; return; }
       const remote = await res.json();
       const localTsRaw = await AsyncStorage.getItem(LAST_MODIFIED_KEY);
       const localTs = localTsRaw ? JSON.parse(localTsRaw) : 0;
@@ -147,6 +148,7 @@ export default function HomeScreen({ navigation }) {
           [LAST_MODIFIED_KEY, JSON.stringify(remote.lastModified)],
         ]);
       }
+      loadedRef.current = true;
     } catch (e) { console.error('Remote load error', e); }
   };
 
@@ -155,6 +157,7 @@ export default function HomeScreen({ navigation }) {
     try {
       await AsyncStorage.setItem(USER_ID_KEY, id);
       await AsyncStorage.setItem(LAST_MODIFIED_KEY, JSON.stringify(0));
+      loadedRef.current = false;
       loadFromServer(id);
     } catch (e) { console.error('UserId save error', e); }
   };
@@ -180,7 +183,7 @@ export default function HomeScreen({ navigation }) {
 
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'background' || nextState === 'inactive') {
-        if (userId) syncToServer(userId, globalData);
+        if (userId && loadedRef.current) syncToServer(userId, globalData);
       }
     });
 

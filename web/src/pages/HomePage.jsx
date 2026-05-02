@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SettingsDrawer from '../components/SettingsDrawer';
 import { loadAllTabs, saveTab, loadSettings, saveSettings, loadUserId, saveUserId, generateUserId, collapseData, loadLastModified, saveLastModified } from '../storage';
 import s from './HomePage.module.css';
@@ -18,6 +18,7 @@ export default function HomePage({ onOpenDetail }) {
   const [clipboard, setClipboard]     = useState(null);
   const [settings, setSettings]       = useState({ showCompleted: true });
   const [userId, setUserId]           = useState('');
+  const loadedRef = useRef(false);
 
   // ----------------------------------------------------------------
   // PERSISTENCE
@@ -35,7 +36,8 @@ export default function HomePage({ onOpenDetail }) {
           saveLastModified(remote.lastModified);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { loadedRef.current = true; });
   }, []);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function HomePage({ onOpenDetail }) {
     setUserId(id);
     saveUserId(id);
     saveLastModified(0);
+    loadedRef.current = false;
     fetchRemote(id);
   };
 
@@ -76,6 +79,7 @@ export default function HomePage({ onOpenDetail }) {
     const syncToServer = (data) => {
       const id = loadUserId();
       if (!id) return;
+      if (!loadedRef.current) return;
       const ts = Date.now();
       const clean = {
         lastModified: ts,
